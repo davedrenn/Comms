@@ -1,0 +1,181 @@
+---
+title: "ggplot Practice"
+author: "Dave Drennan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=8, fig.height = 5)
+```
+
+```{r install packages}
+
+my_packages <- c("tidyverse", "broom", "coefplot", "cowplot", "gapminder", "GGally", "ggrepel", "ggridges", "gridExtra", "here", "interplot", "margins", "maps", "mapproj", "mapdata", "MASS", "quantreg", "rlang", "scales", "survey", "srvyr", "viridis", "viridisLite", "devtools")
+
+install.packages(my_packages, repos = "http://cran.rstudio.com")
+
+devtools::install_github("kjhealy/socviz")
+
+```
+
+```{r }
+library(gapminder)
+library(ggplot2)
+
+p <- ggplot(data = gapminder,
+            mapping = aes(x = gdpPercap,
+                          y = lifeExp))
+
+```
+
+```{r}
+p + geom_point()
+```
+
+```{r}
+p + geom_smooth()
+```
+
+```{r}
+p + geom_point() + geom_smooth()
+```
+
+```{r}
+p + geom_point() + geom_smooth(method = "lm")
+```
+
+```{r}
+p + geom_point() + 
+ geom_smooth(method = "gam") +
+ scale_x_log10()
+```
+
+```{r}
+p + geom_point() + 
+ geom_smooth(method = "lm") +
+ scale_x_log10()
+```
+
+```{r}
+p + geom_point() + 
+ geom_smooth(method = "gam") +
+ scale_x_log10()
+```
+
+```{r}
+p + geom_point() + 
+ geom_smooth(method = "gam") +
+ scale_x_log10(labels = scales::dollar)
+```
+
+```{r}
+p + geom_point() + 
+ geom_smooth(method = "gam") +
+ scale_x_log10(labels = scales::comma)
+```
+
+```{r}
+p <- ggplot(data = gapminder,
+           mapping = aes(x = gdpPercap,
+                         y = lifeExp,
+                         color = continent))
+
+p + geom_point() + 
+ geom_smooth(method = "gam") +
+ scale_x_log10(labels = scales::comma)
+```
+
+```{r}
+p <- ggplot(data = gapminder,
+           mapping = aes(x = gdpPercap,
+                         y = lifeExp,
+                         color = "purple"))
+
+p + geom_point() + 
+ geom_smooth(method = "gam") +
+ scale_x_log10(labels = scales::comma)
+```
+
+```{r}
+p <- ggplot(data = gapminder,
+           mapping = aes(x = gdpPercap,
+                         y = lifeExp))
+
+p + geom_point(color = "purple") + 
+ geom_smooth(method = "loess") +
+ scale_x_log10()
+```
+
+```{r}
+p + geom_point(alpha = 0.3) + 
+  geom_smooth(color = "orange", se = FALSE, size = 8, method = "lm") +
+ scale_x_log10()
+```
+
+```{r}
+p + geom_point(alpha = 0.3) + 
+ geom_smooth(method = "gam") +
+ scale_x_log10(labels = scales::dollar) + 
+ labs(x = "GDP Per Capita", 
+       y = "Life Expectancy in Years", 
+       title = "Economic Growth and Life Expenctancy",
+       subtitle = "Data points are country-years",
+       caption = "Source: Gapminder.")
+```
+
+```{r}
+p <- ggplot(data = gapminder,
+           mapping = aes(x = gdpPercap,
+                         y = lifeExp,
+                         color = continent))
+
+p + geom_point(alpha = 0.3) + 
+ geom_smooth(method = "gam") +
+ scale_x_log10(labels = scales::dollar) + 
+ labs(x = "GDP Per Capita", 
+       y = "Life Expectancy in Years", 
+       title = "Economic Growth and Life Expenctancy",
+       subtitle = "Data points are country-years",
+       caption = "Source: Gapminder.")
+```
+
+```{r}
+p <- ggplot(data = gapminder,
+           mapping = aes(x = gdpPercap,
+                         y = lifeExp,
+                         color = continent,
+                         fill = continent))
+
+p + geom_point() + 
+ geom_smooth(method = "loess") +
+ scale_x_log10() + 
+ labs(x = "GDP Per Capita", 
+       y = "Life Expectancy in Years", 
+       title = "Economic Growth and Life Expenctancy",
+        subtitle = "Data points are country-years",
+       caption = "Source: Gapminder.")
+```
+
+```{r}
+p <- ggplot(data = gapminder,
+           mapping = aes(x = gdpPercap,
+                         y = lifeExp))
+
+p + geom_point(mapping = aes(color = continent)) + 
+ geom_smooth(method = "loess") +
+ scale_x_log10()
+```
+
+```{r}
+p + geom_point(mapping = aes(color = log(pop)))+ scale_x_log10()
+```
+
+```{r, fig.width=12, fig.height=9}
+p + geom_point(mapping = aes(color = log(pop)))+ scale_x_log10()
+
+ggsave(filename = "my_figure.png")
+ggsave(filename = "my_figure.pdf")
+
+```
+look into `here` library

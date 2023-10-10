@@ -1,0 +1,208 @@
+---
+title: "NailedIt"
+author: "Dave Drennan"
+output: html_document
+date: "2023-09-19"
+---
+
+```{r setup, include=FALSE}
+
+install.packages("lemon")
+
+library(tidyverse)
+library(tidycensus)
+library(lemon)
+library(lubridate)
+
+source("helper_functions.R")
+source("theme/theme_swd.R")
+theme_set(theme_swd())
+
+options(scipen=999)
+
+census_api_key("e13d5be5cb48d927009e0dca0af99d21918d514f", overwrite = TRUE)
+```
+
+First read in the data and do a lil processing.
+
+```{r fig1data}
+
+df <- read_csv(file.path("data", "FIG0206-7.csv")) %>% 
+  mutate(`Cost Per Mile` = as.numeric(str_remove_all(`Cost Per Mile`,"\\$"))) 
+
+```
+
+Create a couple of variables
+
+```{r averages}
+
+avg_miles <- mean(df$`Miles Driven`)
+avg_cost <- mean(df$`Cost Per Mile`)
+
+```
+
+ggplot
+
+```{r ggplot}
+
+pt <- ggplot(df) + 
+  geom_point(aes(x = `Miles Driven`,y = `Cost Per Mile`), color = GRAY9, size = 2.5) +
+  scale_y_continuous(breaks = seq(0,3.5,.5), limits = c(0,3), labels = scales::dollar_format()) + 
+  scale_x_continuous(limits = c(0,4000), label = scales::comma) +
+  geom_point(x = avg_miles, y = avg_cost, size=3.5) + 
+  geom_text(x = avg_miles, y = avg_cost, label = "AVG", hjust = 1.25) +  
+  labs(title = "Cost per mile by miles driven", x = "Miles driven per month", y = "Cost per mile") +
+  coord_capped_cart(bottom = "right", left = "top")
+
+pt
+
+```
+
+
+```{r df2}
+
+df2 <- read_csv(file.path("data", "FIG0206-7.csv")) %>% 
+  mutate(`Cost Per Mile` = parse_number(`Cost Per Mile`),
+         avg_miles = mean(`Cost Per Mile`, na.rm = TRUE),
+         avg_cost = mean(`Cost Per Mile`, na.rm = TRUE),
+         color = if_else(`Cost Per Mile` < avg_miles, GRAY9, ORANGE1))
+
+
+
+
+```
+
+```{r df2plot}
+
+pt2 <- ggplot(df) + 
+  geom_point(aes(x=`Miles Driven`,y=`Cost Per Mile`, color = color), size = 3) +
+  scale_color_identity() + 
+  scale_y_continuous(breaks = seq(0,3,.5), limits = c(0,3),labels = scales::dollar_format()) + 
+  scale_x_continuous(limits = c(0,4000), label = scales::comma) + 
+  geom_hline(yintercept = avg_cost, linetype = "longdash") + 
+  geom_point(x = avg_miles,y=avg_cost,size=3.5) + 
+  geom_label(x = avg_miles, y = avg_cost, label = "AVG", hjust = 1.25, label.size = 0) +  
+  labs(title = "Cost per mile by miles driven", x = "Miles driven per month", y = "Cost per mile") +
+  coord_capped_cart(bottom = "right", left = "top")
+
+pt2
+
+```
+
+```{r challenge}
+
+pa_wide <- get_acs(
+  geography = "county",
+  state = "Pennsylvania",
+  variables = c(medinc = "B19013_001",
+                medage = "B01002_001"),
+  output = "wide",
+  year = 2020) %>%
+  mutate(avg_inc = mean(medincE, na.rm = TRUE),
+         avg_age = mean(medageE, na.rm = TRUE),
+         color = if_else(medincE < avg_inc & medageE < avg_age, RED1,
+                 if_else(medincE < avg_inc & medageE > avg_age, ORANGE1,
+                 if_else(medincE > avg_inc & medageE < avg_age, BLUE1, GREEN1))))
+
+avg_age <- mean(pa_wide$medageE)
+avg_inc <- mean(pa_wide$medincE)
+
+pa <- ggplot(pa_wide) + 
+  geom_point(aes(x=medageE,y=medincE, color = color), size = 3) +
+  scale_color_identity() + 
+  scale_y_continuous(label = scales::dollar_format()) +  
+  geom_hline(yintercept = avg_inc, linetype = "longdash") +
+  geom_vline(xintercept = avg_age, linetype = "longdash") +
+  geom_point(x = avg_age,y=avg_inc,size=3.5) + 
+  geom_label(x = avg_age, y = avg_inc, label = "AVG", vjust = 1, label.size = NA, fill = "transparent") +
+  geom_label(x = avg_age, y = avg_inc, label = "Low/Low", vjust = 3, hjust = 3, label.size = NA, fill = "transparent", color = RED1) +
+  geom_label(x = avg_age, y = avg_inc, label = "Low/High", vjust = -3, hjust = 3, label.size = NA, fill = "transparent", color = BLUE1) +
+  geom_label(x = avg_age, y = avg_inc, label = "High/Low", vjust = 3, hjust = -3, label.size = NA, fill = "transparent", color = ORANGE1) +
+  geom_label(x = avg_age, y = avg_inc, label = "High/High", vjust = -3, hjust = -3, label.size = NA, fill = "transparent", color = GREEN1) +
+  labs(title = "Median Income per Median Age by PA County", x = "Age", y = "Income") +
+  coord_capped_cart(bottom = "right", left = "top")
+
+pa
+
+```
+```{r Chunk2}
+
+df <- read_csv(file.path("data", "FIG0209.csv")) %>% mutate(date = ymd(paste(Year, Month, 1)))
+
+# Missing from this re-creation are the long x-axis ticks. Unclear on how to increase tick length and center the labels between ticks.
+pt <- ggplot(df, aes(x = date)) +
+  geom_ribbon(aes(ymin = Min, ymax = Max), fill = GRAY9) +
+  geom_line(aes(y = Avg), linewidth = 2, color = GRAY4) +
+  geom_point(aes(y = Avg), linewidth = 1, data = df %>% slice(1), color = GRAY4) +
+  geom_point(aes(y = Avg), linewidth = 4, data = df %>% slice(n()), color = GRAY4) +
+  geom_text(aes(y = Min), hjust = -0.1, vjust = -1.1, color = GRAY5, parse = T, label = sprintf("bold(MIN)"), data = df %>% slice(1)) +
+  geom_text(aes(y = Avg), hjust = -0.1, vjust = -0.5, parse = T, label = "bold(AVG)", data = df %>% slice(1)) +
+  geom_text(aes(y = Max), hjust = -0.1, vjust = 2, color = GRAY5, parse = T, label = "bold(MAX)", data = df %>% slice(1)) +
+  geom_text(aes(y = Avg, label = paste0("bold(", Avg, ")")), parse = T, nudge_x = 15, data = df %>% slice(n())) +
+  scale_y_continuous(breaks = seq(0, 40, 5), limit = c(0, 40)) +
+  scale_x_date(
+    date_labels = "%b", breaks = df$date, expand = c(0, 0),
+    limits = c(ymd("2014-08-16", ymd("2015-10-01")))
+  ) +
+  labs(y = "Wait time (minutes)", x = NULL, title = "Passport control wait time", subtitle = "Past 13 months")
+
+pt
+
+```
+
+```{r challenge 2}
+
+years <- 2005:2019
+names(years) <- years
+
+philly_value <- map_dfr(years, ~{
+  get_acs(
+    geography = "county",
+    variables = "B25077_001",
+    state = "PA",
+    county = "Philadelphia",
+    year = .x,
+    survey = "acs1"
+  )
+}, .id = "year")
+
+ggplot(philly_value, aes(x = year, y = estimate, group = 1)) + 
+  geom_ribbon(aes(ymax = estimate + moe, ymin = estimate - moe), 
+              fill = GRAY9) + 
+  geom_line(size = 1, color = GRAY4) + 
+  geom_point(size =1,  data = philly_value %>% slice(1), color = GRAY4) +
+  geom_point(size= 1, data = philly_value %>% slice(n()), color = GRAY4) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  labs(title = "Median home value in Philly County, PA",
+       x = "Year",
+       y = "ACS estimate",
+       caption = "Shaded area represents margin of error around the ACS estimate")
+
+```
+
+```{r, fig.width=10}
+ggplot(philly_value, aes(x = year, y = estimate, group = 1)) + 
+  geom_ribbon(aes(ymax = estimate + moe, ymin = estimate - moe), 
+              fill = "navy",
+              alpha = 0.4) + 
+  geom_line(color = "navy") + 
+  geom_point(size =3,  data = philly_value %>% filter(year>2012), color = "navy") +
+  geom_vline(xintercept = "2009", color = "darkgrey") + 
+  scale_y_continuous(labels = scales::dollar_format(scale = .001, suffix = "k")) +
+  labs(title = "Median home value in Philly County, PA",
+       x = "Year",
+       y = "ACS estimate",
+       caption = "Shaded area represents margin of error around the ACS estimate")+
+  annotation_custom(grob_explanation)
+
+grob_explanation <- grobTree(richtext_grob(
+  "<span style='background-color:white'><b>Starting in 2013,</b> prices began to rise<br> for the first time since the Great Recession<br>and have steadily climbed through 2019</span>", 
+  x=.32,  y=.9, hjust=0, gp=gpar(col = GRAY3, fontsize=11), box_gp = gpar(col = "white", fill = "white"),
+  padding = margin(.4,0,0,0,"in")),
+  richtext_grob(
+  "<span style='background-color:white'><b>Starting in 2013,</b> prices began to rise<br> for the first time since the Great Recession<br>and have steadily climbed through 2019</span>", 
+  x=.8,  y=.9, hjust=0, gp=gpar(col = GRAY3, fontsize=11), box_gp = gpar(col = "white", fill = "white"),
+  padding = margin(.4,0,0,0,"in")))
+
+
+```
