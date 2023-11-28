@@ -1,0 +1,358 @@
+---
+title: "Memorandum"
+subtitle: "Homework assignment for MUSA 6951 the University of Pennsylvania"
+output: 
+  html_document:
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r libraries}
+
+library(tidyverse)
+library(tidycensus)
+library(socviz)
+library(lubridate)
+library(sf)
+library(scales)
+library(arcpullr)
+library(zoo)
+library(grid)
+library(viridis)
+library(gridExtra)
+library(gridtext)
+library(ggtext)
+library(dplyr)
+
+options(scipen =999)
+
+```
+
+```{r musa_theme, include = FALSE}
+
+theme_musa <- function(){
+  font = "sans"
+  theme_minimal() %+replace%
+    
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      
+      axis.ticks = element_blank(),
+      axis.ticks.x.bottom = element_line(color = "grey90", size = .5),
+
+      plot.margin = margin(1,1,1,1),
+      
+      plot.title = element_text(
+        family = font,
+        size = 14,
+        face = 'bold',
+        hjust = 0,
+        vjust = 0,
+        margin = margin(2, b = 10)),
+      
+      plot.subtitle = element_text(
+        family = font,
+        size = 12,
+        hjust = 0,
+        margin = margin(2, b = 10),
+        face = "italic"),
+      
+      plot.caption = element_text(
+        family = font,
+        size = 10,
+        hjust = 1),
+      
+      axis.title = element_text(
+        family = font,
+        size = 10,
+        margin = margin(5, b = 10)),
+      
+      axis.text = element_text(
+        family = font,
+        size = 10),
+      axis.text.y = element_text(
+        margin = margin(5, b = 10)),
+      )
+}
+
+```
+
+
+
+
+
+**TO:** James Garrow, Communications Director, Department of Public Health
+
+**FROM:** Dave Drennan
+
+**DATE:** 28 November 2023
+
+**SUBJECT:** Strengthen Communications Strategy to Public for Heightened COVID Risk in Winter 2023
+
+
+**Introduction**
+
+We are no longer in an officially declared global pandemic, but COVID-19 remains a threat to the health and wellness of Philadelphia's population. However, current communications from the city do not emphasize the risks that citizens may face this coming winter as we enter the holiday season and a period of the year where people will congregate more indoors. On the City's website, we state that current risk is "low" and do not provide clear enough guidance on test reporting and vaccine distribution. I do not want to convey the notion that we are in dire circumstances as of now - recent COVID statistics for Philadelphia indicate that reported cases are low. However, the virus continues to [circulate and hospitalize residents](https://www.inquirer.com/health/coronavirus/new-covid-vaccine-booster-availability-philadelphia-cvs-walgreens-20230915.html]). 
+
+The public's perception of COVID risk has dropped since the public health emergency declaration ended. Mask usage appears down and while updated vaccines became available this Fall, uptake remains low. [National reporting](https://www.pbs.org/newshour/health/vaccine-data-shows-rates-for-latest-covid-19-booster-is-abysmal-only-7-percent-of-u-s-adults-with-shot) indicates only 7% of adults and 2% of children, with 40% of adults stating that they are unlikely to get the updated vaccine or vaccinate their children.  
+
+However, we lack clear and robust data on COVID statistics for the city and are not effectively conveying or continuously updating the data we have. Some challenges are due to national trends on COVID response, like the shift from COVID testing sites to readily available at-home rapid tests supplied by the Federal Government. While you've [previously spoken publicly](https://whyy.org/articles/i-tested-positive-for-covid-on-a-home-test-how-do-i-report-it/) on our Department's decision to not track at-home test results, we have limited knowledge on current cases. We also have limited knowledge of current vaccinations rates in the city - our public data set on OpenDataPhilly has not been updated for over a year, and our [dashboard](https://www.phila.gov/programs/coronavirus-disease-2019-covid-19/testing/testing-data/) on COVID statistics is limited to waste water COVID measurements, hospitalizations, and deaths, with major reporting gaps for the latter.
+
+Based on our limited data collection and national trends of low COVID vaccine uptake, current testing shows cases are rising and put Philadelphia at risk for another difficult winter for COVID. We must increase outreach that encourages residents to get the new COVID vaccines in time for the holiday period to avoid a significant spike in cases, as well as think long-term about better strategies to collect better testing and vaccine data. 
+
+
+**Analysis**
+
+
+*Philly COVID Data*
+
+The data used in this memo comes from OpenDataPhilly, the City of Philadelphia's public data platform. The downloaded data set covers COVID-19 daily test result collections by the city - this information is split between a daily positive and daily negative count of test results.
+
+```{r data, results='hide'}
+#read data
+covid <- read.csv("data/covid_cases_by_date.csv")
+
+#convert collection_date to datetime
+covid$collection_date <- as.Date(covid$collection_date)
+
+#sort
+covid <- covid %>%
+  arrange(ymd(covid$collection_date))
+
+#add month
+covid$month <- month(covid$collection_date)
+
+#add year
+covid$year <- year(covid$collection_date)
+
+#add weekday
+covid$weekday <- wday(covid$collection_date)
+
+#data split by year and test result
+covid_years <- 
+  covid %>%
+  group_by(year, test_result) %>%
+  summarize(total = sum(count))
+
+#positive result rolling average
+covid_pos <- covid %>%
+  filter(test_result == "positive") %>%
+  mutate(
+    rollingAvg_pos = rollmean(
+      count, k=7, fill=NA, align='right'
+      ) 
+  ) %>%
+  dplyr::select(objectid, rollingAvg_pos)
+
+#negative result rolling average
+covid_neg <- covid %>%
+  filter(test_result == "negative") %>%
+  mutate(
+    rollingAvg_neg = rollmean(
+      count, k=7, fill=NA, align='right'
+      ) 
+  ) %>%
+  dplyr::select(objectid, rollingAvg_neg)
+
+#rolling average join
+covid <- covid %>% 
+  left_join(covid_pos, covid, by="objectid") %>%
+  left_join(covid_neg, covid, by= "objectid")
+
+#splitting year into quarters starting with December
+covid$season <- quarter(covid$collection_date, fiscal_start = 12)
+
+#assigning season names to quarter values
+covid$season[covid$season == 1] <- "Winter"
+covid$season[covid$season == 2] <- "Spring"
+covid$season[covid$season == 3] <- "Summer"
+covid$season[covid$season == 4] <- "Fall"
+
+#positive results sum by season by year, with winter differentiated to change color
+covid_pos_seasons <- covid %>%
+  filter(test_result == "positive") %>%
+  group_by(season, year) %>%
+  summarize(total = sum(count)) %>%
+  mutate(
+    season = fct_relevel(season, "Fall", after=2),
+    type = ifelse(season == "Winter", "Highlighted", "Normal"))
+
+map_data <- st_read("data/covid_vaccines_by_census_tract.shp") %>%
+  st_transform(epsg=2272)
+
+```
+
+
+*Reviewing Philadelphia's COVID testing history*
+
+
+You have been with the Philadelphia Department of Health since before the pandemic, but it is worthwhile to review the historical testing data of the City over the course of the pandemic. There have been two major periods of high volume daily test collections reviewed by the City, Fall to Winter in both 2020-2021 and 2021-2022. Positive daily test results peaked just after New Years 2022, followed by a decline in overall testing but steady numbers of daily positive results until 2023. 
+
+```{r plot2}
+
+annotations <- grobTree(
+  richtext_grob(
+  "<span style='background-color:white'>3/13/2020:<br>Nationwide emergency<br>in US declared</span>", 
+  x=.055,  y=.395, hjust=0, gp=gpar(col = "grey20", fontsize=8), box_gp = gpar(col = "white", fill = "white", alpha = .3)),
+  richtext_grob(
+  "<span style='background-color:white'>4/16/2021:<br>Phliadelphians age<br>16+ eligible for<br>COVID vaccine</span>", 
+  x=.335,  y=.80, hjust=0, gp=gpar(col = "grey20", fontsize=8), box_gp = gpar(col = "white", fill = "white", alpha = .3)),
+  richtext_grob(
+  "<span style='background-color:white'>1/03/2022:<br>Positive tests peak<br>after New Years 2022</span>", 
+  x=.52,  y=.90, hjust=0, gp=gpar(col = "grey20", fontsize=8), box_gp = gpar(col = "white", fill = "white", alpha = .3)),
+  richtext_grob(
+  "<span style='background-color:white'>5/11/2023:<br>Public health emergency<br>declared over in US</span>", 
+  x=.85,  y=.395, hjust=1, gp=gpar(col = "grey20", fontsize=8), box_gp = gpar(col = "white", fill = "white", alpha = .3)),
+   richtext_grob(
+  "<span style='background-color:white'>9/25/2023:<br>Positive tests on the<br>rise in Philly</span>", 
+  x=.95,  y=.6, hjust=1, gp=gpar(col = "grey20", fontsize=8), box_gp = gpar(col = "white", fill = "white", alpha = .3))
+  )
+
+ggplot() + 
+  geom_area(data = covid, aes(x=collection_date, y=rollingAvg_neg), color=NA, fill = "grey85")+
+  geom_area(data = covid, aes(x=collection_date, y=rollingAvg_pos), color=NA, fill = "#fa9fb5")+
+  geom_segment(data = covid,
+               x = ymd("2020-03-13"),
+               y = 0,
+               xend = ymd("2020-03-13"),
+               yend = 3950,
+               color = "grey40",
+               alpha = .3)+
+  geom_segment(data = covid,
+               x = ymd("2021-04-16"),
+               y = 0,
+               xend = ymd("2021-04-16"),
+               yend = 8450,
+               color = "grey40",
+               alpha = .3)+
+  geom_segment(data = covid,
+               x = ymd("2022-01-03"),
+               y = 0,
+               xend = ymd("2022-01-03"),
+               yend = 9300,
+               color = "grey40",
+               alpha = .3)+
+  geom_segment(data = covid,
+               x = ymd("2023-05-11"),
+               y = 0,
+               xend = ymd("2023-05-11"),
+               yend = 3950,
+               color = "grey40",
+               alpha = .3)+
+  geom_segment(data = covid,
+               x = ymd("2023-09-25"),
+               y = 0,
+               xend = ymd("2023-09-25"),
+               yend = 6150,
+               color = "grey40",
+               alpha = .3)+
+  labs(title = "Philly's <span style='color:#fa9fb5;'>positive</span> tests spiked around New Year's Day 2022",
+       subtitle = "Since then, the city has seen a major decline in all reporting, but tests appear\nto be rising again as of Fall 2023 following their lowest daily counts in the city",
+       color = "Test Result",
+       x = "", y = "Total Test Results",
+       caption = "7-day rolling average test results; negative results shown in grey\nSource: PhillyOpenData") +
+  scale_y_continuous(label=comma) +
+  theme_musa() +
+  theme(panel.grid.major.y = element_line(color="grey90", size = .1),
+        axis.line.x = element_line(color = "grey90", size = .1),
+        plot.title = element_markdown(size = 12)) +
+  scale_x_date(date_labels = "%D",date_breaks = "6 months") +
+  annotation_custom(annotations)
+
+```
+
+Especially in 2023, our limited knowledge of test results due to a lack of reporting makes it more difficult for us to measure COVID-positive case levels in the city and impacts to residents' health and the economy. While CDC isolation guidelines have changed over the course of the pandemic, each unique positive case of COVID hypothetically leads to at least five days of self-isolating.  
+
+At-home rapid COVID tests became more widely available in 2022, so these daily test results throughout 2023 may reflect more severe cases, potentially involving hospitalizations. These hospitalizations can also put other at-risk demographics in the hospital in danger of catching COVID and compounding their initial reasons for being there. 
+
+
+*Vaccine data remains lacking*
+
+
+Our public data shows that most of the city has at least one does of the COVID vaccine. However, this data set has not been updated on OpenDataPhilly since 2021. Since these vaccination rates reflect the first dose only, any decrease per Census tract is unlikely. However, we do not have a clear sense of the community's current vaccination levels and how we compare to the national reported number of 7% of adults with the latest booster. This lack of data reporting makes our job effectively communicating to the public more difficult as a result.
+
+```{r map}
+
+ggplot()+
+  geom_sf(data=map_data, aes(fill = dose1_perc))+
+  scale_fill_viridis(option = "mako", discrete=TRUE)+
+  labs(title = "Most residents have at least one COVID vaccination dose as of 2021,",
+       subtitle = "but we lack robust and current data reporting on vaccination rates",
+       caption = "Source: OpenDataPhilly",
+       fill = "First Dose %")+
+  theme_musa() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        plot.title = element_markdown(size = 12))
+
+```
+
+Additionally, regions of Philadelphia with lower first dose vaccination rates are more prominent in North and West Philly. Given that many Census tracts in these areas are majority non-white and/or lower income, our communications strategy to reach a wide range of residents in different socioeconomic and demographic contexts is even more important.
+
+
+*Publicly reported COVID test results have plummeted in 2023*
+
+
+To reinforce the data decrease we now face, the following chart provides total daily test results officially tracked by Philadelphia. Testing availability was generally more limited in 2020, followed by better testing infrastructure in 2021 that coincided with the highly contagious Omicron variant. 2022 then saw the rise of at-home testing, but the total number of daily positive tests remained similar to 2021. 
+
+Only in 2023 have we seen a precipitous decline in data tracked by the City. Daily test results collected by Philadelphia decreased to near 0 around Summer 2023, based on the previous timeline chart, and this drop-off is reflected in our total test collection results. However, the proportion of positive results is still high. These 2023 positive results may again reflect more serious cases that result in hospitalization that put a strain on our institutions and people's lives. 
+
+```{r plot1}
+
+ggplot(data = drop_na(covid_years), aes(fill=test_result, y=total, x=as.character(year))) + 
+  geom_bar(position="stack", stat="identity", width = .7)+
+  scale_fill_manual(values = c("grey85","#fa9fb5")) +
+  labs(title = "Reported <span style='color:#fa9fb5;'>positive</span> COVID tests have dropped significantly in 2023,",
+       subtitle = "but Philly's total test collections are a fraction of previous years",
+       fill = "Test Result",
+       x = "", y = "Total Test Results",
+       caption = "Negative results shown in grey\nSource: OpenDataPhilly") + 
+  coord_flip() +
+  scale_y_continuous(label=comma) +
+  theme_musa()+
+  theme(plot.title = element_markdown(size = 12),
+        panel.grid.major.x = element_line(color="grey90", size = .1)) +
+  theme(legend.position = "none")
+
+```
+
+
+*Winters in Philadelphia have historically been the worst periods for COVID*
+
+
+Unsurprisingly, winter months have been peak times for the spread of COVID, which are test collection data reflects. Residents gather together indoors to avoid the cold and celebrate the holidays, which leads to more opportunities for exposure. Our peak number of positive test results collected in in January 2022 also somewhat skews our data, but Fall and Winter months have generally experienced more positive test results. 
+
+```{r plot3}
+level_order <- c("Spring", "Summer", "Fall", "Winter")
+
+ggplot(na.omit(covid_pos_seasons), aes(x = factor(season, level = level_order), y = total, fill = type)) + 
+  geom_boxplot(color = "grey75") +
+  labs(title = "Since 2020, <span style='color:#9ecae1;'>winter</span> months have been the most contagious,",
+       subtitle = "and with positive tests rising as of Fall 2023, this winter may see positive results\nincrease but to unclear numbers given the reduction in collected results by the city",
+       x = "", y = "Positive Tests",
+       caption = "Winter months defined as December to February\nSource: OpenDataPhilly") + 
+  scale_fill_manual(values=c("#9ecae1", "grey90"), guide = "none")+
+  scale_y_continuous(label=comma) +
+  theme_musa() +
+  theme(plot.title = element_markdown(size = 12),
+        panel.grid.major.y = element_line(color="grey90", size = .1),
+        legend.position = "none")
+
+```
+
+Positive test results have already begun to tick up during this Fall, which could potentially be a bad sign of things to come as we head into the holidays. As residents travel and/or celebrate the holidays, demographics most at risk of hospitalization in the community may not realize the actual level of risk they face from COVID now that our data collection is down and precautions like masking or getting vaccinated are no longer followed. Our messaging is therefore critical to remind people of best practices as we think about new ways to gather better data long-term.
+
+
+**Recommendation**
+
+In the short-term, we need to increase our public messaging to Philadelphians around testing, masking, and most importantly, vaccinating against COVID. We should update our website to make these COVID recommendations more obvious, increase the number of vaccine clinics hosted in the city, and find ways to increase outreach for these simple steps to protect our residents from COVID. This outreach could include partnering with local non-profits, broadcast messaging through local TV commercials and radio, and/or partnering with institutions like the Philadelphia Eagles to promote vaccination. 
+
+In the long-term, we should consider ways to increase data collection and reporting. The existing dashboard on our website has limited functionality with only a few metrics tracked, and many of our published data sets are out of data. Daily test collection results is one of our few data sets that continues to be updated, but as we saw in this analysis, the results have become less reliable over time. By instituting at least some form of self-reporting on our website and providing better tracking of positive COVID cases and vaccination rates can help us avoid a future crisis. Additionally, the lessons we learn from implementing better data management practices can lay the groundwork for more effective reporting in the future should we face another pandemic-level health crisis.
+

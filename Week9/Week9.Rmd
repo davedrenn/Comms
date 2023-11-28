@@ -1,0 +1,319 @@
+---
+title: "Week 9"
+author: "Elizabeth Delmelle"
+date: "2023-10-24"
+output: html_document
+---
+
+# A very important story about things
+
+We are working towards building our own storymap-type application for the next assignment. We'll be integrating the knoweldge from the second assignment on creating stellar R Markdowns, knowledge from constructing graphs and maps, building a narrative and today..the final element, how to integrate some interactivity into your story.
+
+Much of the material in this document originates in the TidyCensus book by Kyle Walker - I've updated the code where necessary or changed things here and there.
+
+
+Create an interactive scatterplot using census data
+
+```{r}
+library(tidycensus)
+library(tidyverse)
+library(ggbeeswarm)
+library(scales)
+
+options(scipen = 999)
+
+ny_race_income <- get_acs(
+  geography = "tract", 
+  state = "NY",  
+  county = c("New York", "Bronx", "Queens", "Richmond", "Kings"),
+  variables = c(White = "B03002_003", 
+                Black = "B03002_004", 
+                Asian = "B03002_006",
+                Hispanic = "B03002_012"), 
+  summary_var = "B19013_001",
+  year = 2020
+) %>%
+  group_by(GEOID) %>%
+  filter(estimate == max(estimate, na.rm = TRUE)) %>%
+  ungroup() %>%
+  filter(estimate != 0)
+
+plot <- ggplot(ny_race_income, aes(x = variable, y = summary_est, color = summary_est)) +
+  geom_quasirandom(alpha = 0.5) + 
+  coord_flip() + 
+  theme_minimal(base_size = 13) + 
+  scale_color_viridis_c(guide = "none") + 
+  scale_y_continuous(labels = label_dollar()) + 
+  labs(x = "Largest group in Census tract", 
+       y = "Median household income", 
+       title = "Household income distribution by largest racial/ethnic group", 
+       subtitle = "Census tracts, New York City", 
+       caption = "Data source: 2016-2020 ACS")
+
+```
+Now make it interactive
+
+```{r}
+library(plotly)
+ggplotly(plot)
+```
+
+Maybe we will just do a simple one now? But then focus on how to customize some things
+
+
+```{r}
+ga_wide <- get_acs(
+  geography = "county",
+  state = "Georgia",
+  variables = c(medinc = "B19013_001",
+                medage = "B01002_001"),
+  output = "wide",
+  year = 2020
+)
+
+plot2<-ggplot(ga_wide, aes(x = medageE, y = medincE)) + 
+  geom_point()
+
+plot2
+```
+
+Dive more into Plotly
+
+```{r}
+plotly_chart <- ggplotly(plot2, dynamicTicks = TRUE)
+plotly_chart
+
+#Title and Labels
+
+plotly_chart <- plotly_chart %>%
+  layout(
+    title = "Median Age versus Median Income",
+    xaxis = list(title = "Median Age"),
+    yaxis = list(title = "Median Income")
+  )
+
+
+#Colors and Markers
+plotly_chart <- plotly_chart %>%
+  add_annotations(
+    x= 35, y = 110000, text = "Rich Folks, not too old",
+    showarrow = TRUE, arrowhead = 2
+  ) 
+
+
+##Themes and Templates
+
+plotly_chart <- plotly_chart %>%
+  layout(
+    template = "plotly_dark" #apply a dark theme
+  )
+
+plotly_chart %>%
+  rangeslider() %>%
+  layout(hovermode = "x")
+
+```
+
+
+
+
+Create a simple interactive, zoomable map
+
+```{r}
+library(mapview)
+library(tigris)
+
+st <- states()
+dc_block_groups <- block_groups("DC")
+mapview(dc_block_groups)
+```
+
+Work with leaflet to create an interactive visualization
+
+```{r}
+dallas_bachelors <- get_acs(
+  geography = "tract",
+  variables = "DP02_0068P",
+  year = 2020,
+  state = "TX",
+  county = "Dallas",
+  geometry = TRUE
+)
+mapview(dallas_bachelors, zcol = "estimate")
+
+
+```
+
+
+We can also convert a tmap map into an interactive leaflet map. After running this code, all subsequent tmaps in your R session will be rendered as interactive leaflet maps using the same tmap syntax used to make static maps
+
+```{r}
+library(tmap)
+tmap_mode("view")
+
+tm_shape(dallas_bachelors) + 
+  tm_polygons(fill = "estimate", palette = "magma",
+          alpha = 0.5)
+```
+
+
+To switch back to static plotting mode, run the command tmap_mode("plot"). The core leaflet package has plenty of ways to customize your map
+
+```{r}
+library(leaflet)
+
+pal <- colorNumeric(
+  palette = "magma",
+  domain = dallas_bachelors$estimate
+)
+
+pal(c(10, 20, 30, 40, 50))
+```
+
+Here are the steps for building a leaflet map:
+
+1. The leaflet() function initalizes the map. A data object can be specified here or in a function that comes later
+2. addProviderTiles() helps you add a basemap to the map. Use the built-in providers object to try out different basemaps
+3. addPolygons() adds the tract polygons to the map and styles them.
+4. addLegend() creates a legend for the map
+
+```{r}
+
+marker_data <- data.frame(
+  Name = c("Airport"),
+  Lat = c(32.897480),
+  Lon = c(-97.040443)
+)
+
+leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  addPolygons(data = dallas_bachelors,
+              color = ~pal(estimate),
+              weight = 0.5,
+              smoothFactor = 0.2,
+              fillOpacity = 0.5,
+              label = ~estimate
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal,
+    values = dallas_bachelors$estimate,
+    title = "% with bachelor's<br/>degree"
+  ) %>% 
+  addCircleMarkers(
+    data = marker_data,
+    lat = ~Lat,
+    lng = ~Lon,
+    popup = ~Name,
+    radius = 6,
+    color = "blue",
+    fill = TRUE,
+    fillOpacity = 1
+  )
+
+
+```
+
+
+ggiraph package. leaflet uses web mercator projection which stinks if you zoom out and distorts things. Here's another approach, ggiraph that is similar to plotly. You can convert your graphic into an interactive plot.
+This example uses an approach called shift_geometry to change the projection.
+
+```{r}
+library(ggiraph)
+library(scales)
+library(tigris)
+
+us_value_shifted <- dc_block_groups %>%
+  shift_geometry(position = "outside") %>%
+  mutate(tooltip = paste(GEOID, ALAND, sep = ": "))
+
+gg <- ggplot(us_value_shifted, aes(fill = ALAND)) + 
+  geom_sf_interactive(aes(tooltip = tooltip, data_id = GEOID), 
+                      size = 0.1) + 
+  scale_fill_viridis_c(option = "plasma", labels = label_dollar()) + 
+  labs(title = "Median housing value by State, 2019",
+       caption = "Data source: 2019 1-year ACS, US Census Bureau",
+       fill = "ACS estimate") + 
+  theme_void() 
+  
+girafe(ggobj = gg) %>%
+  girafe_options(opts_hover(css = "fill:cyan;"), 
+                 opts_zoom(max = 10))
+```
+
+Flow maps (migration flow)
+
+```{r}
+philly_inflow <- get_flows(
+  geography = "county",
+  state = "PA",
+  county = "Philadelphia",
+  geometry = TRUE
+) %>%
+  filter(variable == "MOVEDIN") %>%
+  na.omit() %>%
+  arrange(desc(estimate))
+```
+
+
+```{r}
+library(mapdeck)
+token <- "pk.eyJ1IjoiZWNkZWxtZWxsZSIsImEiOiJjbG8zcTVlNGwwMTRrMmxudXNvMTlpM3A5In0.qv1IRxXEoai7_ZtyOadKpg"
+philly_inflow %>%
+  slice_max(estimate, n = 40) %>%
+  mutate(weight = estimate / 500) %>%
+  mapdeck(token = token) %>%
+  add_arc(origin = "centroid2",
+          destination = "centroid1",
+          stroke_width = "weight",
+          update_view = FALSE,
+          tooltip = "FULL2_NAME"
+          )
+```
+
+
+Linking maps and charts
+
+```{r}
+library(patchwork)
+
+
+vt_income <- get_acs(
+  geography = "county",
+  variables = "B19013_001",
+  state = "VT",
+  year = 2020,
+  geometry = TRUE
+) %>%
+  mutate(NAME = str_remove(NAME, " County, Vermont"))
+
+vt_map <- ggplot(vt_income, aes(fill = estimate)) + 
+  geom_sf_interactive(aes(data_id = GEOID)) + 
+  scale_fill_distiller(palette = "Greens",
+                       direction = 1, 
+                       guide = "none") + 
+  theme_void()
+
+vt_plot <- ggplot(vt_income, aes(x = estimate, y = reorder(NAME, estimate), 
+                                 fill = estimate)) +
+  geom_errorbar(aes(xmin = estimate - moe, xmax = estimate + moe)) +
+  geom_point_interactive(color = "black", size = 4, shape = 21,
+                         aes(data_id = GEOID)) +
+  scale_fill_distiller(palette = "Greens", direction = 1,
+                       labels = label_dollar()) + 
+  scale_x_continuous(labels = label_dollar()) + 
+  labs(title = "Household income by county in Vermont",
+       subtitle = "2016-2020 American Community Survey",
+       y = "",
+       x = "ACS estimate (bars represent margin of error)",
+       fill = "ACS estimate") + 
+  theme_minimal(base_size = 14)
+
+girafe(ggobj = vt_map + vt_plot, width_svg = 10, height_svg = 5) %>%
+  girafe_options(opts_hover(css = "fill:cyan;"))
+```
+
+
+
+
+

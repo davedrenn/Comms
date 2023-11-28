@@ -1,0 +1,185 @@
+---
+title: "Week 7 Mapping"
+author: "Elizabeth Delmelle"
+date: "2023-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(sf)
+library(terra)
+library(dplyr)
+library(spData)
+library(tidycensus)
+remotes::install_github("r-tmap/tmap", force = TRUE)
+library(tmap)    # for static and interactive maps
+library(leaflet) # for interactive maps
+library(ggplot2) # tidyverse data visualization package
+
+```
+
+
+Mapping in t_map. Begin with an example mapping race in Hennepin County, MN. Here we get the data in long format. This has one row per race, with the tract row repeated each time. Then a summary variable is added to calculate percentages. Finally, we filter out just black to get started. Make sure to set geometry to TRUE to get the geographic fields needed for mapping.
+```{r getdata}
+hennepin_race <- get_decennial(
+  geography = "tract",
+  state = "MN",
+  county = "Hennepin",
+  variables = c(
+    Hispanic = "P2_002N",
+    White = "P2_005N",
+    Black = "P2_006N",
+    Native = "P2_007N",
+    Asian = "P2_008N"
+  ),
+  summary_var = "P2_001N",
+  year = 2020,
+  geometry = TRUE
+) %>%
+  mutate(percent = 100 * (value / summary_value))
+
+hennepin_black <- filter(hennepin_race, 
+                         variable == "Black")
+```
+
+Now we can dive into tmap. Here we will make a simple map. The syntax is similar to ggplot - it uses the grammar of graphics to build up the map by layer. The basic building block is tm_shape() which defines a vector or raster object as input data. This is followed by one or more layer elements like tm_fill() and tm_dots().
+
+```{r map1}
+tm_shape(hennepin_black) + 
+  tm_fill()
+
+tm_shape(hennepin_black)+
+  tm_borders()
+
+tm_shape(hennepin_black)+
+  tm_fill()+
+  tm_borders()
+
+tm_shape(hennepin_black) + 
+  tm_polygons()
+```
+
+Now lets map a given attribute by specifying the column in the fill argument of tm_polygons
+
+```{r}
+tm_shape(hennepin_black) + 
+  tm_polygons(fill = "percent")
+```
+
+tm_map uses classification by default as opposed to ggplot that does an unclassed map by default. The default grouping is based on an approach called 'pretty' -- the algorithm finds clean looking breaks (for the legend).
+A better approach would look at the distribution of the data and fit that.
+
+```{r}
+hist(hennepin_black$percent)
+```
+We can change the classification method.
+
+breaks allows you to manually set the breaks
+n sets the number of bins into which numeric variables are categorized
+values defines the color scheme, for example, BuGn
+
+style = "pretty": the default setting, rounds breaks into whole numbers where possible and spaces them evenly
+
+style = "equal": divides input values into bins of equal range and is appropriate for variables with a uniform distribution (not recommended for variables with a skewed distribution as the resulting map may end-up having little color diversity)
+
+style = "quantile": ensures the same number of observations fall into each category (with the potential downside that bin ranges can vary widely)
+
+style = "jenks": identifies groups of similar values in the data and maximizes the differences between categories
+
+style = "log10_pretty": a common logarithmic (the logarithm to base 10) version of the regular pretty style used for variables with a right-skewed distribution
+
+I also added another layer just to modify the borders
+
+```{r}
+tm_shape(hennepin_black) + 
+  tm_polygons(fill = "percent", fill.scale = tm_scale_continuous(), col = "grey", popup.vars = "percent")
+
+```
+How would you like to explore some colors? Install the package cols4all (and all its dependencies). Then run the GUI below
+
+```{r}
+
+library(cols4all)
+install.packages(c("shinyjs", "colorblindcheck"))
+c4a_gui()
+```
+
+**** Spend 5-10 minutes playing around with the basic parameters above to get a feel for them.
+
+Now let's make a legend. Always give an intuitive title to your legend.
+
+```{r}
+legend_title = expression("Percent Black 2020")
+tm_shape(hennepin_black) +
+  tm_polygons(fill = "percent", fill.legend = tm_legend(title = legend_title))
+
+```
+```{r}
+legend_title = expression("Percent Black 2020")
+map1 <- tm_shape(hennepin_black) +
+  tm_polygons(fill = "percent", frame = NA, fill.legend = tm_legend(title = legend_title,
+                                      orientation = "landscape",
+                                      position = tm_pos_out("center", "bottom"),
+                                      frame = NA))
+
+map1
+```
+
+** On your own now, modify the code above and change tm_pos_out to tm_pos_in()
+
+Ok now we will create a layout for the map. Here you can specify the tile, scale bar, grid etc.
+
+Additional map elements such as graticules , north arrows, scale bars and map titles have their own functions: tm_graticules(), tm_compass(), tm_scalebar(), and tm_title()
+
+Here is a sampling of allll the things.
+
+```{r}
+tm_shape(hennepin_black) +
+  tm_polygons(fill = "percent", crs = "EPSG:26915", frame = NA,  fill.legend = tm_legend(title = legend_title,
+                                      orientation = "landscape",
+                                      position = tm_pos_out("center", "bottom"), frame = NA)) + 
+  tm_compass(type = "point", position = c("left", "top")) +
+  tm_scalebar(breaks = c(0, 100, 200), text.size = 10, position = c("left", "top")) +
+  tm_title("Share of Black Population by Census Tract, Hennepin County, MN, 2020") + tm_layout(frame = FALSE)
+```
+
+But wait, there are more: check out ?tm_layout
+tm_layout(scale = 4)
+bg.color = "lightblue" -- sets the background of the map page to light blue (or whatever you want)
+map_nz + tm_layout(frame = FALSE) -- remove frame
+Margin settings including outer.margin and inner.margin
+
+Font settings controlled by fontface and fontfamily
+
+Legend settings including options such as legend.show (whether or not to show the legend)
+
+legend.orientation, legend.position, and legend.frame
+
+Frame width (frame.lwd) and an option to allow double lines (frame.double.line)
+
+Color settings controlling color.sepia.intensity (how yellowy the map looks) and color.saturation (a color-grayscale)
+
+** Ok spend 5-10 minutes customizing the layout settings
+
+
+Faceted Maps (Small Multiples)
+
+```{r}
+
+tm_shape(hennepin_race) +
+  tm_polygons(fill = "percent", fill.legend = tm_legend(title = "Percent (2020 US Census)")) +
+  tm_facets_wrap(by = "variable", nrow = 3)+tm_layout(frame = FALSE)
+```
+What about a cartogram?
+
+```{r}
+if (requireNamespace("cartogram")) {
+tm_shape(hennepin_black, crs = "EPSG:26915") +
+	tm_cartogram(size = "percent",
+				 fill = "percent", 
+				 fill.scale = tm_scale_intervals(values = "purple_green"),
+				 fill.legend = tm_legend(title = "Share of Black Residents")) +
+	tm_place_legends_right(width = 0.2)
+}
+```
+
